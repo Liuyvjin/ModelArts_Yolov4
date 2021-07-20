@@ -100,8 +100,8 @@ class Trainer(object):
 
     def __load_resume_weights(self):
         # default path: cfg.WEIGHT_PATH/last.pth
-        last_weight = osp.join(cfg.WEIGHT_PATH, "last.pth")
-        chkpt = torch.load(last_weight, map_location=self.device)
+        # last_weight = osp.join(cfg.WEIGHT_PATH, "last.pth")
+        chkpt = torch.load(self.weight_path, map_location=self.device)
         self.yolov4.load_state_dict(chkpt["model"])
 
         self.start_epoch = chkpt["epoch"] + 1
@@ -109,11 +109,11 @@ class Trainer(object):
             self.optimizer.load_state_dict(chkpt["optimizer"])
             self.best_mAP = chkpt["best_mAP"]
         del chkpt
-        self.logger.info_both("Load pretrained model from: %s"%last_weight)
+        self.logger.info_both("Load pretrained model from: %s"%self.weight_path)
 
     def __save_model_weights(self, epoch, mAP=-1):
         # if epoch>=epoch[last] or (epoch+1)%20==0[backup] or map>best_map[best] then save
-        if epoch<self.eval_epoch and (epoch+1)%20!=0 and mAP<=self.best_mAP:
+        if epoch<self.eval_epoch and (epoch+1)%10!=0 and mAP<=self.best_mAP:
             return
         if mAP > self.best_mAP:
             self.best_mAP = mAP
@@ -133,8 +133,9 @@ class Trainer(object):
             torch.save(chkpt["model"], best_weight)
             self.logger.info_both('Save model at: {:s}'.format(best_weight))
 
-        if (epoch+1) % 20 == 0:
-            torch.save(chkpt,  os.path.join(cfg.WEIGHT_PATH, "backup_epoch%d.pth" % epoch+1))
+        if (epoch+1) % 10 == 0:
+            torch.save(chkpt,  os.path.join(cfg.WEIGHT_PATH, "backup_epoch%d.pth" % (epoch+1)))
+            self.logger.info_both('Save model: {:s}'.format("backup_epoch%d.pth" % (epoch+1)))
         del chkpt
 
     def train(self):
@@ -234,7 +235,7 @@ class Trainer(object):
                     self.logger.info_both("val img size is {}".format(cfg.VAL["TEST_IMG_SIZE"]))
                     with torch.no_grad():
                         APs, inference_time = Evaluator(self.yolov4, showatt=self.showatt, epoch=epoch).APs_voc()
-                        for k in APs.keys:
+                        for k in APs.keys():
                             self.logger.info_both("AP of class: {} = {}".format(k, APs[k]))
                             mAP += APs[k]
                         mAP = mAP / self.train_dataset.num_classes

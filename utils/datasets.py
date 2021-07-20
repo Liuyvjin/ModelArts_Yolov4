@@ -37,7 +37,7 @@ class Build_Dataset(Dataset):
 
         img_org, bboxes_org = self.__parse_annotation(self.__annotations[item])
         img_org = img_org.transpose(2, 0, 1)  # HWC->CHW
-
+        # random choice a image
         item_mix = random.randint(0, len(self.__annotations) - 1)
         img_mix, bboxes_mix = self.__parse_annotation(
             self.__annotations[item_mix]
@@ -47,14 +47,7 @@ class Build_Dataset(Dataset):
         img, bboxes = dataAug.Mixup()(img_org, bboxes_org, img_mix, bboxes_mix)
         del img_org, bboxes_org, img_mix, bboxes_mix
 
-        (
-            label_sbbox,
-            label_mbbox,
-            label_lbbox,
-            sbboxes,
-            mbboxes,
-            lbboxes,
-        ) = self.__creat_label(bboxes)
+        (label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes) = self.__creat_label(bboxes) ###
 
         img = torch.from_numpy(img).float()
         label_sbbox = torch.from_numpy(label_sbbox).float()
@@ -64,15 +57,8 @@ class Build_Dataset(Dataset):
         mbboxes = torch.from_numpy(mbboxes).float()
         lbboxes = torch.from_numpy(lbboxes).float()
 
-        return (
-            img,
-            label_sbbox,
-            label_mbbox,
-            label_lbbox,
-            sbboxes,
-            mbboxes,
-            lbboxes,
-        )
+        return ( img, label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes)
+
 
     def __load_annotations(self, anno_type):
 
@@ -103,11 +89,9 @@ class Build_Dataset(Dataset):
         assert img is not None, "File Not Found " + img_path
         bboxes = np.array(
             [list(map(float, box.split(","))) for box in anno[1:]]
-        )
+        )   # [num_boxes, 5]
 
-        img, bboxes = dataAug.RandomHorizontalFilp()(
-            np.copy(img), np.copy(bboxes), img_path
-        )
+        img, bboxes = dataAug.RandomHorizontalFilp()(np.copy(img), np.copy(bboxes))
         img, bboxes = dataAug.RandomCrop()(np.copy(img), np.copy(bboxes))
         img, bboxes = dataAug.RandomAffine()(np.copy(img), np.copy(bboxes))
         img, bboxes = dataAug.Resize((self.img_size, self.img_size), True)(
@@ -134,20 +118,11 @@ class Build_Dataset(Dataset):
 
         anchors = np.array(cfg.MODEL["ANCHORS"])
         strides = np.array(cfg.MODEL["STRIDES"])
-        train_output_size = self.img_size / strides
-        anchors_per_scale = cfg.MODEL["ANCHORS_PER_SCLAE"]
+        train_output_size = self.img_size / strides         # [8, 16, 32],
+        anchors_per_scale = cfg.MODEL["ANCHORS_PER_SCLAE"]  # 3
 
-        label = [
-            np.zeros(
-                (
-                    int(train_output_size[i]),
-                    int(train_output_size[i]),
-                    anchors_per_scale,
-                    6 + self.num_classes,
-                )
-            )
-            for i in range(3)
-        ]
+        label = [ np.zeros((int(train_output_size[i]),  int(train_output_size[i]),
+                            anchors_per_scale,          6 + self.num_classes    ))   for i in range(3) ]
         for i in range(3):
             label[i][..., 5] = 1.0
 
