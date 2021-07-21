@@ -8,7 +8,7 @@ import os.path as osp
 if __name__ == "__main__":
     global logger, writer
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weight_file",    type=str,   default="backup_epoch110.pth",
+    parser.add_argument("--weight_file",    type=str,   default="backup_epoch120.pth",
                                             help="weight file path, relative to WEIGHT_PATH")
     parser.add_argument("--resume",         type=bool,  default=True,      help="resume training flag")
     parser.add_argument("--gpu_id",         type=int,   default=0,          help="weather use GPU(0) or CPU(-1)" )
@@ -21,7 +21,6 @@ if __name__ == "__main__":
     writer = SummaryWriter(logdir   =   osp.join(log_dir, "event") )
     logger = Logger(    log_path    =   osp.join(log_dir, "run.log"),
                         logger_name =   "YOLOv4"  )
-    print("1")
 
     Trainer(logger      =   logger,
             writer      =   writer,

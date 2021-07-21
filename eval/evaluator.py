@@ -67,13 +67,13 @@ class Evaluator(object):
         img = cv2.imread(img_path)
         bboxes_prd = self.get_bbox(img, self.multi_scale_test, self.flip_test)
 
-        if bboxes_prd.shape[0] != 0  and self.visual_imgs < 5:
+        if bboxes_prd.shape[0] != 0  and self.visual_imgs < 10:
             boxes = bboxes_prd[..., :4]
             class_inds = bboxes_prd[..., 5].astype(np.int32)
             scores = bboxes_prd[..., 4]
 
             visualize_boxes(image=img, boxes=boxes, labels=class_inds, probs=scores, class_labels=self.classes)
-            path = os.path.join(self.pred_image_path, "epoch{:0>3d}_{:d}.jpg".format(self.epoch, self.visual_imgs))
+            path = os.path.join(self.pred_image_path, "{:d}.jpg".format(self.visual_imgs))
             cv2.imwrite(path, img)
 
             self.visual_imgs += 1
