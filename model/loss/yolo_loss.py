@@ -42,7 +42,7 @@ class YoloV4Loss(nn.Module):
     ):
         """
         :param p: Predicted offset values for three detection layers.
-                    The shape is [p0, p1, p2], ex. p0=[bs, grid, grid, anchors, tx+ty+tw+th+conf+cls_20]
+                    The shape is [p0, p1, p2], ex. p0=[batchsize, grid, grid, anchors, tx+ty+tw+th+conf+cls_20]
         :param p_d: Decodeed predicted value. The size of value is for image size.
                     ex. p_d0=[bs, grid, grid, anchors, x+y+w+h+conf+cls_20]
         :param label_sbbox: Small detection layer's label. The size of value is for original image size.

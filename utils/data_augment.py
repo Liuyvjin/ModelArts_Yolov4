@@ -131,13 +131,14 @@ class Mixup(object):
         if random.random() > self.p:
             lam = np.random.beta(1.5, 1.5)
             img = lam * img_org + (1 - lam) * img_mix
+            # bboex_org: [num_box, 5] ,  lam_matrix: [num_box, 1] -> [num_box, 6]
             bboxes_org = np.concatenate(
                 [bboxes_org, np.full((len(bboxes_org), 1), lam)], axis=1
             )
             bboxes_mix = np.concatenate(
                 [bboxes_mix, np.full((len(bboxes_mix), 1), 1 - lam)], axis=1
             )
-            bboxes = np.concatenate([bboxes_org, bboxes_mix])
+            bboxes = np.concatenate([bboxes_org, bboxes_mix])  # [num_box1+num_box2, 6]
 
         else:
             img = img_org

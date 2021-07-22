@@ -64,12 +64,12 @@ class SpatialPyramidPooling(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
 
 
 class Upsample(nn.Module):
@@ -197,12 +197,12 @@ class PANet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
 
 
 class PredictNet(nn.Module):
@@ -237,12 +237,12 @@ class PredictNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
 
 
 class YOLOv4(nn.Module):

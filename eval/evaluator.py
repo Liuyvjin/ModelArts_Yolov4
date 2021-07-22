@@ -1,157 +1,110 @@
-import shutil
-from eval import voc_eval
-from utils.data_augment import *
-from utils.tools import *
-from tqdm import tqdm
-from utils.visualize import *
-from utils.heatmap import imshowAtt
-import config.yolov4_config as cfg
+import sys
+import os
+import os.path as osp
+import cv2
+import numpy as np
+import torch
 import time
-import multiprocessing
-from multiprocessing.dummy import Pool as ThreadPool        # 线程池
+from tqdm import tqdm
 from collections import defaultdict
+
+Base_dir = osp.dirname(osp.abspath(__file__))
+sys.path.append(osp.join(Base_dir, ".."))
+from utils.data_augment import Resize
+from eval.voc_eval import voc_eval
+from utils.tools import nms, xywh2xyxy
+from utils.visualize import visualize_boxes
+import config.yolov4_config as cfg
+import multiprocessing
+from multiprocessing.dummy import Pool as ThreadPool
 current_milli_time = lambda: int(round(time.time() * 1000))
 
 
 class Evaluator(object):
-    def __init__(self, model=None, showatt=False, epoch=0):
-        if cfg.TRAIN["DATA_TYPE"] == "VOC":
-            self.classes = cfg.VOC_DATA["CLASSES"]
-        elif cfg.TRAIN["DATA_TYPE"] == "COCO":
-            self.classes = cfg.COCO_DATA["CLASSES"]
-        else:
-            self.classes = cfg.Customer_DATA["CLASSES"]
-        self.conf_thresh = cfg.VAL["CONF_THRESH"]
-        self.nms_thresh = cfg.VAL["NMS_THRESH"]
-        self.val_shape = cfg.VAL["TEST_IMG_SIZE"]
-        self.model = model
-        self.device = next(model.parameters()).device
-        self.visual_imgs = 0
-        self.multi_scale_test = cfg.VAL["MULTI_SCALE_VAL"]
-        self.flip_test = cfg.VAL["FLIP_VAL"]
-        self.showatt = showatt
-        self.inference_time = 0.0
-        self.final_result = defaultdict(list)
-        self.pred_result_path = os.path.join(cfg.DATA_PATH, "pred_result")
-        self.pred_image_path = os.path.join(cfg.DATA_PATH, "pred_images")
-        if not os.path.exists(self.pred_image_path):
+    def __init__(self, model=None):
+        self.classes        =   cfg.Customer_DATA["CLASSES"]    # default: use customer dataset
+        self.conf_thresh    =   cfg.VAL["CONF_THRESH"]          # 0.005
+        self.nms_thresh     =   cfg.VAL["NMS_THRESH"]           # 0.45
+        self.test_size      =   cfg.VAL["TEST_IMG_SIZE"]        # 416
+
+        self.model          =   model
+        self.device         =   next(model.parameters()).device
+        self.class_record   =   defaultdict(list)               # detected objs categorized by classes
+
+        self.max_visual_img =   20 # max num of pred images to be visualized
+        self.cnt_visual_img =   0  # num of pred images be visualized
+        self.inference_time =   0.0
+
+        self.pred_image_path    = osp.join(cfg.DATA_PATH, "pred_images")
+        if not osp.exists(self.pred_image_path):
             os.mkdir(self.pred_image_path)
-        self.epoch = epoch
 
-    def APs_voc(self):
-        # read image name list
-        img_inds_file = os.path.join( cfg.DATASET_PATH,  "test.txt" )
-        with open(img_inds_file, "r") as f:
+    def calc_APs(self):
+        # read images from test.txt
+        img_list_file = osp.join( cfg.DATASET_PATH,  "test.txt" )
+        with open(img_list_file, "r") as f:
             lines = f.readlines()
-            img_inds = [line.strip() for line in lines]
+            img_list = [line.strip() for line in lines]
+        # predict all imgs, save result in class_record
+        pool = ThreadPool(multiprocessing.cpu_count())
+        with tqdm(total=len(img_list), ncols=120, smoothing=0.9 ) as tq:
+            for i, _ in enumerate(pool.imap_unordered(self.predict_and_save, img_list)):
+                tq.update()
+        self.inference_time = 1.0 * self.inference_time / len(img_list)
+        # calc mAP
+        APs = {}
+        for cls, data in self.class_record.items():
+            img_idxs = np.array([rec[0] for rec in data])
+            bbox_conf = np.array([rec[1] for rec in data], dtype=np.float)
+            _, _, AP = voc_eval((img_idxs, bbox_conf), cls_name=cls)
+            APs[cls] = AP
+        return APs, self.inference_time
 
-        if os.path.exists(self.pred_result_path):
-            shutil.rmtree(self.pred_result_path)
-        os.mkdir(self.pred_result_path)
-
-        imgs_count = len(img_inds)
-        cpu_nums = multiprocessing.cpu_count()
-        pool = ThreadPool(cpu_nums)
-        with tqdm(total=imgs_count, ncols=120, smoothing=0.9 ) as pbar:
-            for i, _ in enumerate(pool.imap_unordered(self.Single_APs_voc, img_inds)):
-                pbar.update()
-        for class_name in self.final_result:
-            with open(os.path.join(self.pred_result_path, 'test_' + class_name + '.txt'), 'a') as f:
-                str_result = ''.join(self.final_result[class_name])
-                f.write(str_result)
-        self.inference_time = 1.0 * self.inference_time / len(img_inds)
-        return self.__calc_APs(), self.inference_time
-
-    def Single_APs_voc(self, img_ind):
-        img_path = os.path.join(cfg.DATASET_PATH, 'JPEGImages', img_ind + '.jpg')
+    def predict_and_save(self, img_idx):
+        # find img file
+        img_path = osp.join(cfg.DATASET_PATH, 'JPEGImages', img_idx + '.jpg')
         img = cv2.imread(img_path)
-        bboxes_prd = self.get_bbox(img, self.multi_scale_test, self.flip_test)
+        # predict all valid bboxes in img [N, 6]
+        bboxes_prd = self.predict(img)
+        # visualization
+        if bboxes_prd.shape[0] != 0  and self.cnt_visual_img < self.max_visual_img:
+            boxes = bboxes_prd[:, :4]
+            cls_ids = bboxes_prd[:, 5].astype(np.int32)
+            scores = bboxes_prd[:, 4]
+            visualize_boxes(image=img, boxes=boxes, labels=cls_ids, probs=scores, class_labels=self.classes)
+            save_path = osp.join(self.pred_image_path, "{}.jpg".format(img_idx))
+            cv2.imwrite(save_path, img)
+            self.cnt_visual_img += 1
 
-        if bboxes_prd.shape[0] != 0  and self.visual_imgs < 10:
-            boxes = bboxes_prd[..., :4]
-            class_inds = bboxes_prd[..., 5].astype(np.int32)
-            scores = bboxes_prd[..., 4]
-
-            visualize_boxes(image=img, boxes=boxes, labels=class_inds, probs=scores, class_labels=self.classes)
-            path = os.path.join(self.pred_image_path, "{:d}.jpg".format(self.visual_imgs))
-            cv2.imwrite(path, img)
-
-            self.visual_imgs += 1
-
+        # save to class_record
         for bbox in bboxes_prd:
-            coor = np.array(bbox[:4], dtype=np.int32)
-            score = bbox[4]
-            class_ind = int(bbox[5])
+            cls_name = self.classes[int(bbox[5])]
+            self.class_record[cls_name].append([img_idx, bbox[:5]])
 
-            class_name = self.classes[class_ind]
-            score = '%.4f' % score
-            xmin, ymin, xmax, ymax = map(str, coor)
-            result_str = ' '.join([img_ind, score, xmin, ymin, xmax, ymax]) + '\n'
-
-            self.final_result[class_name].append(result_str)
-
-    def get_bbox(self, img, multi_test=False, flip_test=False, mode=None):
-        if multi_test:
-            test_input_sizes = range(320, 640, 96)
-            bboxes_list = []
-            for test_input_size in test_input_sizes:
-                valid_scale = (0, np.inf)
-                bboxes_list.append(
-                    self.__predict(img, test_input_size, valid_scale, mode)
-                )
-                if flip_test:
-                    bboxes_flip = self.__predict(
-                        img[:, ::-1], test_input_size, valid_scale, mode
-                    )
-                    bboxes_flip[:, [0, 2]] = (
-                        img.shape[1] - bboxes_flip[:, [2, 0]]
-                    )
-                    bboxes_list.append(bboxes_flip)
-            bboxes = np.row_stack(bboxes_list)
-        else:
-            bboxes = self.__predict(img, self.val_shape, (0, np.inf), mode)
-
-        bboxes = nms(bboxes, self.conf_thresh, self.nms_thresh)
-
-        return bboxes
-
-    def __predict(self, img, test_shape, valid_scale, mode):
-        org_img = np.copy(img)
-        org_h, org_w, _ = org_img.shape
-
-        img = self.__get_img_tensor(img, test_shape).to(self.device)
+    def predict(self, img):
+        org_shape = img.shape[:2]
+        img = self.__transform(img)  # [1, C, test_size, test_size]
         self.model.eval()
         with torch.no_grad():
             start_time = current_milli_time()
-            if self.showatt:
-                _, p_d, atten = self.model(img)
-            else:
-                _, p_d = self.model(img)
+            _, pred_decode = self.model(img)   # p_d
             self.inference_time += current_milli_time() - start_time
-        pred_bbox = p_d.squeeze().cpu().numpy()
-        bboxes = self.__convert_pred(
-            pred_bbox, test_shape, (org_h, org_w), valid_scale
-        )
-        if self.showatt and len(img) and mode == 'det':
-            self.__show_heatmap(atten, org_img)
+        # p_d: [Sigma0~2[batchsize x grid[i] x grid[i] x anchors(3)], x+y+w+h+conf+cls_6(11)]
+        pred_decode = pred_decode.squeeze().cpu().numpy()
+        # [N, 6(xmin, ymin, xmax, ymax, score, class)]
+        bboxes = self.resize_filter_pb( pred_decode, self.test_size, org_shape)
+        bboxes = nms(bboxes, self.conf_thresh, self.nms_thresh)
         return bboxes
 
-    def __show_heatmap(self, beta, img):
-        imshowAtt(beta, img)
-
-    def __get_img_tensor(self, img, test_shape):
-        img = Resize((test_shape, test_shape), correct_box=False)(
-            img, None
-        ).transpose(2, 0, 1)
-        return torch.from_numpy(img[np.newaxis, ...]).float()
-
-    def __convert_pred(
-        self, pred_bbox, test_input_size, org_img_shape, valid_scale
+    def resize_filter_pb(
+        self, pred_bbox, test_input_size, org_img_shape, valid_scale=(0, np.inf)
     ):
         """
-        Filter out the prediction box to remove the unreasonable scale of the box
+        input: pred_bbox - [Sigma0~2[batchsize x grid[i] x grid[i] x anchors(3)], x+y+w+h+conf+cls_6 (11)]
+        Resize to origin size and Filter out the prediction box to remove the unreasonable scale of the box
+        output: pred_bbox [n, x+y+w+h+conf+cls (6)]
         """
-        pred_coor = xywh2xyxy(pred_bbox[:, :4])
+        pred_coor = xywh2xyxy(pred_bbox[:, :4]) # to xyxy
         pred_conf = pred_bbox[:, 4]
         pred_prob = pred_bbox[:, 5:]
 
@@ -159,9 +112,7 @@ class Evaluator(object):
         # (xmin_org, xmax_org) = ((xmin, xmax) - dw) / resize_ratio
         # (ymin_org, ymax_org) = ((ymin, ymax) - dh) / resize_ratio
         org_h, org_w = org_img_shape
-        resize_ratio = min(
-            1.0 * test_input_size / org_w, 1.0 * test_input_size / org_h
-        )
+        resize_ratio = min(1.0*test_input_size/org_w, 1.0*test_input_size/org_h)
         dw = (test_input_size - resize_ratio * org_w) / 2
         dh = (test_input_size - resize_ratio * org_h) / 2
         pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
@@ -183,6 +134,7 @@ class Evaluator(object):
         pred_coor[invalid_mask] = 0
 
         # (4)Remove bboxes that are not in the valid range
+        # for [0, inf], this can be skiped
         bboxes_scale = np.sqrt(
             np.multiply.reduce(pred_coor[:, 2:4] - pred_coor[:, 0:2], axis=-1)
         )
@@ -207,39 +159,32 @@ class Evaluator(object):
 
         return bboxes
 
-    def __calc_APs(self, iou_thresh=0.5, use_07_metric=False):
-        """
-        Calculate ap values for each category
-        :param iou_thresh:
-        :param use_07_metric:
-        :return:dict{cls:ap}
-        """
-        filename = os.path.join(
-            self.pred_result_path, "test_{:s}.txt"
-        )
-        cachedir = os.path.join(self.pred_result_path, "cache")
-        # annopath = os.path.join(self.val_data_path, 'Annotations', '{:s}.xml')
-        annopath = os.path.join(
-            cfg.DATASET_PATH, "Annotations\\" + "{:s}.xml"
-        )
-        imagesetfile = os.path.join(cfg.DATASET_PATH, "test.txt")
-        APs = {}
-        Recalls = {}
-        Precisions = {}
-        for cls in self.classes:
-            R, P, AP = voc_eval.voc_eval(
-                filename,
-                annopath,
-                imagesetfile,
-                cls,
-                cachedir,
-                iou_thresh,
-                use_07_metric,
-            )
-            Recalls[cls] = R
-            Precisions[cls] = P
-            APs[cls] = AP
-        if os.path.exists(cachedir):
-            shutil.rmtree(cachedir)
+    def __transform(self, img):
+        img = Resize((self.test_size, self.test_size), correct_box=False)(img, None).transpose(2, 0, 1)
+        return torch.from_numpy(img[np.newaxis, ...]).float().to(self.device)
 
-        return APs
+
+if __name__ == '__main__':
+    import time
+    from model.build_model import Build_Model
+
+    weight_path = osp.join(Base_dir, '../weights/best.pth')
+    print("loading weight file from : {}".format(weight_path))
+    chkpt = torch.load(weight_path, map_location=torch.device('cuda'))
+
+    model = Build_Model().cuda()
+    model.load_state_dict(chkpt)
+    del chkpt
+
+    evalutaor = Evaluator(model)
+    start = time.time()
+    mAP = 0
+    Aps, _ = evalutaor.calc_APs()
+    for k, v in Aps.items():
+        print('class {}: {:.3f}'.format(k, v))
+        mAP += v
+    print('mAP: {:.3f}'.format(mAP/6.0))
+    print('total time: %d' % (time.time() - start))
+
+
+

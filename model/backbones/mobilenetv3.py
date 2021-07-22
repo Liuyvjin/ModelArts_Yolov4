@@ -207,18 +207,18 @@ class _MobileNetV3(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
             elif isinstance(m, nn.Linear):
                 n = m.weight.size(1)
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
-                print("initing {}".format(m))
+                # print("initing {}".format(m))
 
 
 class FeatureExtractor(nn.Module):

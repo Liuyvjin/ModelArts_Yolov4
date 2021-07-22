@@ -37,14 +37,14 @@ class Build_Dataset(Dataset):
 
         img_org, bboxes_org = self.__parse_annotation(self.__annotations[item])
         img_org = img_org.transpose(2, 0, 1)  # HWC->CHW
-        # random choice a image
+        # random choice a image to mix with origin image
         item_mix = random.randint(0, len(self.__annotations) - 1)
         img_mix, bboxes_mix = self.__parse_annotation(
             self.__annotations[item_mix]
         )
         img_mix = img_mix.transpose(2, 0, 1)
-
         img, bboxes = dataAug.Mixup()(img_org, bboxes_org, img_mix, bboxes_mix)
+        # -> boxes: [num_box, 6]  (x, y, x, y, cls, score)
         del img_org, bboxes_org, img_mix, bboxes_mix
 
         (label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes) = self.__creat_label(bboxes) ###
@@ -94,14 +94,13 @@ class Build_Dataset(Dataset):
         img, bboxes = dataAug.RandomHorizontalFilp()(np.copy(img), np.copy(bboxes))
         img, bboxes = dataAug.RandomCrop()(np.copy(img), np.copy(bboxes))
         img, bboxes = dataAug.RandomAffine()(np.copy(img), np.copy(bboxes))
-        img, bboxes = dataAug.Resize((self.img_size, self.img_size), True)(
-            np.copy(img), np.copy(bboxes)
-        )
+        img, bboxes = dataAug.Resize((self.img_size, self.img_size), True)(np.copy(img), np.copy(bboxes))
 
         return img, bboxes
 
     def __creat_label(self, bboxes):
         """
+        Input bboxes: [num_box, 6], (x1, y1, x2, y2, cls, score)
         Label assignment. For a single picture all GT box bboxes are assigned anchor.
         1、Select a bbox in order, convert its coordinates("xyxy") to "xywh"; and scale bbox'
            xywh by the strides.
@@ -116,19 +115,20 @@ class Build_Dataset(Dataset):
 
         """
 
-        anchors = np.array(cfg.MODEL["ANCHORS"])
-        strides = np.array(cfg.MODEL["STRIDES"])
-        train_output_size = self.img_size / strides         # [8, 16, 32],
+        anchors = np.array(cfg.MODEL["ANCHORS"])   # [3, 3, 2]
+        strides = np.array(cfg.MODEL["STRIDES"])   # [3, ]  (8, 16, 32)
+        train_output_size = self.img_size / strides         # [3, ]
         anchors_per_scale = cfg.MODEL["ANCHORS_PER_SCLAE"]  # 3
 
-        label = [ np.zeros((int(train_output_size[i]),  int(train_output_size[i]),
-                            anchors_per_scale,          6 + self.num_classes    ))   for i in range(3) ]
+        label = [ np.zeros((    int(train_output_size[i]),  int(train_output_size[i]),
+                                anchors_per_scale,          6 + self.num_classes        ))
+                                for i in range(3) ]  # 3 X [out_size, out_size, 3, 6+cls]
         for i in range(3):
-            label[i][..., 5] = 1.0
+            label[i][..., 5] = 1.0  # set score to 1
 
         bboxes_xywh = [
             np.zeros((150, 4)) for _ in range(3)
-        ]  # Darknet the max_num is 30
+        ]  # Darknet the max_num is 30  ,  3 x [150, 4]
         bbox_count = np.zeros((3,))
 
         for bbox in bboxes:
@@ -148,7 +148,7 @@ class Build_Dataset(Dataset):
                     bbox_coor[2:] - bbox_coor[:2],
                 ],
                 axis=-1,
-            )
+            ) # [4,]
             # print("bbox_xywh: ", bbox_xywh)
             for j in range(len(bbox_xywh)):
                 if int(bbox_xywh[j]) >= self.img_size:
@@ -156,7 +156,7 @@ class Build_Dataset(Dataset):
                     bbox_xywh[j] -= differ
             bbox_xywh_scaled = (
                 1.0 * bbox_xywh[np.newaxis, :] / strides[:, np.newaxis]
-            )
+            ) # [3, 4]
 
             iou = []
             exist_positive = False
@@ -209,7 +209,7 @@ class Build_Dataset(Dataset):
                 bbox_count[best_detect] += 1
 
         label_sbbox, label_mbbox, label_lbbox = label
-        sbboxes, mbboxes, lbboxes = bboxes_xywh
+        sbboxes, mbboxes, lbboxes = bboxes_xywh  # small_box, middle_box, large_box
 
         return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes
 

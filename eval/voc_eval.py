@@ -4,35 +4,63 @@
 # Written by Bharath Hariharan
 # --------------------------------------------------------
 
+from collections import defaultdict
 import xml.etree.ElementTree as ET
-import os
-import pickle
+import sys
+import os.path as osp
+Base_dir = osp.dirname(osp.abspath(__file__))
+sys.path.append(osp.join(Base_dir, ".."))
+from config.yolov4_config import DATASET_PATH
 import numpy as np
 
 
-def parse_rec(filename):
-    """ Parse a PASCAL VOC xml file """
-    tree = ET.parse(filename)
-    objects = []
-    for obj in tree.findall("object"):
-        obj_struct = {}
-        obj_struct["name"] = obj.find("name").text
-        obj_struct["pose"] = obj.find("pose").text
-        obj_struct["truncated"] = int(obj.find("truncated").text)
-        obj_struct["difficult"] = int(obj.find("difficult").text)
-        bbox = obj.find("bndbox")
-        obj_struct["bbox"] = [
-            int(bbox.find("xmin").text),
-            int(bbox.find("ymin").text),
-            int(bbox.find("xmax").text),
-            int(bbox.find("ymax").text),
-        ]
-        objects.append(obj_struct)
+def read_cls_anno(cls_name):
+    """
+    read all annotations of a class to calculate AP
+    return a dict, {img_idx: array[[x1,y1,x2,y2,difficult], ...]}
+    """
+    cls_record = defaultdict(list)
+    cls_path = osp.join(DATASET_PATH, 'ClassAnnos', cls_name+'.txt')
+    with open(cls_path, "r") as f:
+        lines = f.readlines()
+    lines = [line.split(' ') for line in lines]
+    img_idxs = set([line[0] for line in lines])
+    for line in lines:
+        cls_record[line[0]].append([float(x) for x in line[1].split(',')])
 
-    return objects
+    for key in cls_record.keys():
+        cls_record[key] = np.array(cls_record[key])
+    # for img in img_idxs:
+    #     cls_record[img] = np.array( [   list(map(int, line[1].split(',')))
+    #                                     for line in lines if img==line[0]])
+
+    return cls_record
 
 
-def voc_ap(rec, prec, use_07_metric=False):
+def calc_iou(bbox, gt_bbox):
+    """
+    calculate iou between a predict bbox with ground truth bboxes
+    input bbox: xyxy
+    input gt_bbox: n*xyxy
+    """
+    # intersection
+    xmin = np.maximum(gt_bbox[:, 0], bbox[0])
+    ymin = np.maximum(gt_bbox[:, 1], bbox[1])
+    xmax = np.minimum(gt_bbox[:, 2], bbox[2])
+    ymax = np.minimum(gt_bbox[:, 3], bbox[3])
+    w = np.maximum(xmax - xmin + 1.0, 0.0)
+    h = np.maximum(ymax - ymin + 1.0, 0.0)
+    inters = w * h
+    # union
+    uni = (
+        (bbox[2] - bbox[0] + 1.0) * (bbox[3] - bbox[1] + 1.0) +
+        (gt_bbox[:,2]-gt_bbox[:,0]+1.0) * (gt_bbox[:,3]-gt_bbox[:,1]+1.0)
+        - inters
+    )
+    return inters / uni
+
+
+def calc_ap(rec, prec, use_07_metric=False):
     """ap = voc_ap(rec, prec, [use_07_metric])
     Compute VOC AP given precision and recall.
     If use_07_metric is true, uses the
@@ -67,143 +95,86 @@ def voc_ap(rec, prec, use_07_metric=False):
 
 
 def voc_eval(
-    detpath,
-    annopath,
-    imagesetfile,
-    classname,
-    cachedir,
-    ovthresh=0.5,
+    pred_cls_record: tuple,
+    cls_name,
+    iou_thresh=0.5,
     use_07_metric=False,
 ):
-    """rec, prec, ap = voc_eval(detpath,
-                                annopath,
-                                imagesetfile,
-                                classname,
-                                [ovthresh],
-                                [use_07_metric])
-
-    Top level function that does the PASCAL VOC evaluation.
-
-    detpath: Path to detections
-        detpath.format(classname) should produce the detection results file.
-    annopath: Path to annotations
-        annopath.format(imagename) should be the xml annotations file.
-    imagesetfile: Text file containing the list of images, one image per line.
-    classname: Category name (duh)
-    cachedir: Directory for caching the annotations
-    [ovthresh]: Overlap threshold (default = 0.5)
-    [use_07_metric]: Whether to use VOC07's 11 point AP computation
-        (default False)
     """
-    # assumes detections are in detpath.format(classname)
-    # assumes annotations are in annopath.format(imagename)
-    # assumes imagesetfile is a text file with each line an image name
-    # cachedir caches the annotations in a pickle file
+    rec, prec, ap = voc_eval(...)
+    input pred_cls_record: (img_name_array, data_array[xyxy, conf])
+    Top level function that does the PASCAL VOC evaluation.
+    """
 
-    # first load gt
-    if not os.path.isdir(cachedir):
-        os.mkdir(cachedir)
-    cachefile = os.path.join(cachedir, "annots.pkl")
-    # read list of images
-    with open(imagesetfile, "r") as f:
-        lines = f.readlines()
-    imagenames = [x.strip() for x in lines]
+    # extract ground truth objects for this class from test dataset
+    cls_record = read_cls_anno(cls_name)
+    num_positive = 0
+    for data in cls_record.values():
+        num_positive += sum(1 - data[:, -1])
 
-    if not os.path.isfile(cachefile):
-        # load annots
-        recs = {}
-        for i, imagename in enumerate(imagenames):
-            recs[imagename] = parse_rec(annopath.format(imagename))
-        # save
-        with open(cachefile, "wb") as f:
-            pickle.dump(recs, f)
-    else:
-        # load
-        with open(cachefile, "rb") as f:
-            recs = pickle.load(f)
+    # parse predicted objects
+    pred_imgs, pred_data = pred_cls_record[0], pred_cls_record[1]
+    pred_conf = pred_data[:, 4]
+    pred_bbox = pred_data[:, :4]
+    # sort by confidence
+    sorted_idx = np.argsort(-pred_conf)
+    pred_imgs = pred_imgs[sorted_idx]
+    pred_bbox = pred_bbox[sorted_idx]
 
-    # extract gt objects for this class
-    class_recs = {}
-    npos = 0
-    for imagename in imagenames:
-        R = [obj for obj in recs[imagename] if obj["name"] == classname]
-        bbox = np.array([x["bbox"] for x in R])
-        difficult = np.array([x["difficult"] for x in R]).astype(np.bool)
-        det = [False] * len(R)
-        npos = npos + sum(~difficult)
-        class_recs[imagename] = {
-            "bbox": bbox,
-            "difficult": difficult,
-            "det": det,
-        }
+    pred_len = len(pred_imgs)
+    TP = np.zeros(pred_len)
+    FP = np.zeros(pred_len)
+    # for each predict bbox
+    is_detected = {}
+    for i, bbox in enumerate(pred_bbox):
+        if len(cls_record[pred_imgs[i]])==0:  # whether img[i] is in record
+            FP[i] = 1.0
+            continue
 
-    # read dets
-    detfile = detpath.format(classname)
-    if os.path.isfile(detfile):
-        with open(detfile, "r") as f:
-            lines = f.readlines()
-        splitlines = [x.strip().split(" ") for x in lines]
-        image_ids = [x[0] for x in splitlines]
-        confidence = np.array([float(x[1]) for x in splitlines])
-        BB = np.array([[float(z) for z in x[2:]] for x in splitlines])
+        gt_bbox = cls_record[pred_imgs[i]][:, :4]
+        gt_diff = cls_record[pred_imgs[i]][:, 4]
 
-        # sort by confidence
-        sorted_ind = np.argsort(-confidence)
-        sorted_scores = np.sort(-confidence)
-        BB = BB[sorted_ind, :]
-        image_ids = [image_ids[x] for x in sorted_ind]
+        if is_detected.get(pred_imgs[i]) is None: # create for every img in cls_rec
+            is_detected[pred_imgs[i]] = np.zeros(len(gt_diff))
 
-        # go down dets and mark TPs and FPs
-        nd = len(image_ids)
-        tp = np.zeros(nd)
-        fp = np.zeros(nd)
-        for d in range(nd):
-            R = class_recs[image_ids[d]]
-            bb = BB[d, :].astype(float)
-            ovmax = -np.inf
-            BBGT = R["bbox"].astype(float)
+        ious = calc_iou(bbox, gt_bbox)
+        iou_max = np.max(ious)
+        max_idx = np.argmax(ious)
 
-            if BBGT.size > 0:
-                # compute overlaps
-                # intersection
-                ixmin = np.maximum(BBGT[:, 0], bb[0])
-                iymin = np.maximum(BBGT[:, 1], bb[1])
-                ixmax = np.minimum(BBGT[:, 2], bb[2])
-                iymax = np.minimum(BBGT[:, 3], bb[3])
-                iw = np.maximum(ixmax - ixmin + 1.0, 0.0)
-                ih = np.maximum(iymax - iymin + 1.0, 0.0)
-                inters = iw * ih
+        if iou_max > iou_thresh:
+            if not gt_diff[max_idx]:
+                if not is_detected[pred_imgs[i]][max_idx]: # first time
+                    TP[i] = 1.0
+                    is_detected[pred_imgs[i]][max_idx] = 1
+                else:
+                    FP[i] = 1.0
+        else:
+            FP[i] = 1.0
 
-                # union
-                uni = (
-                    (bb[2] - bb[0] + 1.0) * (bb[3] - bb[1] + 1.0)
-                    + (BBGT[:, 2] - BBGT[:, 0] + 1.0)
-                    * (BBGT[:, 3] - BBGT[:, 1] + 1.0)
-                    - inters
-                )
+    # compute precision and recall
+    FP = np.cumsum(FP)
+    TP = np.cumsum(TP)
 
-                overlaps = inters / uni
-                ovmax = np.max(overlaps)
-                jmax = np.argmax(overlaps)
+    recall = TP / float(num_positive)
+    # avoid divide by zero in case the first detection matches a difficult
+    # ground truth
+    precision = TP / np.maximum(TP + FP, np.finfo(np.float64).eps)
+    ap = calc_ap(recall, precision, use_07_metric)
+    return recall, precision, ap
 
-            if ovmax > ovthresh:
-                if not R["difficult"][jmax]:
-                    if not R["det"][jmax]:
-                        tp[d] = 1.0
-                        R["det"][jmax] = 1
-                    else:
-                        fp[d] = 1.0
-            else:
-                fp[d] = 1.0
 
-        # compute precision recall
-        fp = np.cumsum(fp)
-        tp = np.cumsum(tp)
-        rec = tp / float(npos)
-        # avoid divide by zero in case the first detection matches a difficult
-        # ground truth
-        prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
-        ap = voc_ap(rec, prec, use_07_metric)
-        return rec, prec, ap
-    else:
-        return 0, 0, 0
+
+if __name__=='__main__':
+    img_name = np.array(['5063','813','484'])
+    data = np.array(
+        [[1,2,3,4,0],
+        [629,254,708,430,0],
+        [12,43,57,87,0]], dtype=float
+    )
+    pred_cls_rec = (img_name, data)
+    recall, precision, ap = voc_eval(pred_cls_rec, 'green_go')
+    print(ap)
+
+
+    # cls_rec = read_cls_anno('green_go')
+    # print(cls_rec['813'])

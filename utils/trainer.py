@@ -180,7 +180,6 @@ class Trainer(object):
                     lbboxes = lbboxes.to(self.device)
 
                     p, p_d = self.yolov4(imgs)
-
                     loss, loss_ciou, loss_conf, loss_cls = self.criterion(
                         p, p_d, label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes
                     )
@@ -228,25 +227,21 @@ class Trainer(object):
                                     cls         = mloss[2].item())
 
             # eval
-            mAP = -1
-            if ( cfg.TRAIN["DATA_TYPE"]=="VOC" or cfg.TRAIN["DATA_TYPE"]=="Customer" ):
-                self.yolov4.eval()
-                if epoch >= self.eval_epoch:
-                    self.logger.info_both("val img size is {}".format(cfg.VAL["TEST_IMG_SIZE"]))
-                    with torch.no_grad():
-                        APs, inference_time = Evaluator(self.yolov4, showatt=self.showatt, epoch=epoch).APs_voc()
-                        for k in APs.keys():
-                            self.logger.info_both("AP of class: {} = {}".format(k, APs[k]))
-                            mAP += APs[k]
-                        mAP = mAP / self.train_dataset.num_classes
-                        self.logger.info_both("Test mAP : {:.3f}".format(mAP))
-                        self.logger.info_both(
-                            "Inference time: {:.2f} ms".format(inference_time)
-                        )
-                        self.writer.add_scalar("mAP", mAP, epoch)
+            mAP = 0
+            self.yolov4.eval()
+            if epoch >= self.eval_epoch:
+                self.logger.info_both("val img size is {}".format(cfg.VAL["TEST_IMG_SIZE"]))
+                with torch.no_grad():
+                    APs, inference_time = Evaluator(self.yolov4).calc_APs()
+                    for cls in APs.keys():
+                        self.logger.info_both("AP of class: {} = {}".format(cls, APs[cls]))
+                        mAP += APs[cls]
+                    mAP = mAP / self.train_dataset.num_classes
+                    self.logger.info_both("Test mAP : {:.3f}".format(mAP))
+                    self.logger.info_both("Best mAP : {:.3f}".format(self.best_mAP))
+                    self.logger.info_both("Inference time: {:.2f} ms".format(inference_time))
+                    self.writer.add_scalar("mAP", mAP, epoch)
 
-            else:
-                raise NotImplemented
             # save
             self.__save_model_weights(epoch, mAP)
 
