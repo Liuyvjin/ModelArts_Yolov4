@@ -36,10 +36,10 @@ class Evaluator(object):
         self.inference_time =   0.0
 
         self.pred_image_path    = osp.join(cfg.DATA_PATH, "pred_images")
-        if not osp.exists(self.pred_image_path):
-            os.mkdir(self.pred_image_path)
 
     def calc_APs(self):
+        if not osp.exists(self.pred_image_path):
+            os.mkdir(self.pred_image_path)
         # read images from test.txt
         img_list_file = osp.join( cfg.DATASET_PATH,  "test.txt" )
         with open(img_list_file, "r") as f:
@@ -68,12 +68,7 @@ class Evaluator(object):
         bboxes_prd = self.predict(img)
         # visualization
         if bboxes_prd.shape[0] != 0  and self.cnt_visual_img < self.max_visual_img:
-            boxes = bboxes_prd[:, :4]
-            cls_ids = bboxes_prd[:, 5].astype(np.int32)
-            scores = bboxes_prd[:, 4]
-            visualize_boxes(image=img, boxes=boxes, labels=cls_ids, probs=scores, class_labels=self.classes)
-            save_path = osp.join(self.pred_image_path, "{}.jpg".format(img_idx))
-            cv2.imwrite(save_path, img)
+            self.visualize(img, bboxes_prd, img_idx, save=True)
             self.cnt_visual_img += 1
 
         # save to class_record
@@ -163,6 +158,17 @@ class Evaluator(object):
         img = Resize((self.test_size, self.test_size), correct_box=False)(img, None).transpose(2, 0, 1)
         return torch.from_numpy(img[np.newaxis, ...]).float().to(self.device)
 
+    def visualize(self, img, pred, img_name=None, save=False):
+        if len(pred) > 0:
+            bboxes  = pred[:, :4]
+            cls_ids = pred[:, 5].round().astype(np.int32)
+            scores  = pred[:, 4]
+            visualize_boxes(image=img, boxes=bboxes, labels=cls_ids, probs=scores, class_labels=self.classes)
+        if save:
+            save_path = osp.join(self.pred_image_path, "{}.jpg".format(img_name))
+            cv2.imwrite(save_path, img)
+        return img
+
 
 if __name__ == '__main__':
     import time
@@ -171,12 +177,11 @@ if __name__ == '__main__':
     weight_path = osp.join(Base_dir, '../weights/best.pth')
     print("loading weight file from : {}".format(weight_path))
     chkpt = torch.load(weight_path, map_location=torch.device('cuda'))
-
-    model = Build_Model().cuda()
-    model.load_state_dict(chkpt)
+    yolo = Build_Model().cuda()
+    yolo.load_state_dict(chkpt)
     del chkpt
+    evalutaor = Evaluator(yolo)
 
-    evalutaor = Evaluator(model)
     start = time.time()
     mAP = 0
     Aps, _ = evalutaor.calc_APs()
@@ -185,6 +190,4 @@ if __name__ == '__main__':
         mAP += v
     print('mAP: {:.3f}'.format(mAP/6.0))
     print('total time: %d' % (time.time() - start))
-
-
 
