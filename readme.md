@@ -57,14 +57,14 @@ During training, backups of model will be saved in `weights/*.pth`. You can inte
 python -u train.py --weight_file  your_backup.pth  --resume
 ```
 
-# 5. Detection
+# 4. Detection
 
 Run `predict.py` and you can predict images from testset one by one.
 
 ![test1](https://github.com/Liuyvjin/ModelArts_Yolov4/blob/master/data/test_images/test1.jpg)
 ![test2](https://github.com/Liuyvjin/ModelArts_Yolov4/blob/master/data/test_images/test2.jpg)
 
-# 4. Deployment
+# 5. Deployment
 
 Copy `weights/best.pth` to `ModelArts/model/best.pth`. Then upload the entire `ModelArts` folder to the ModelArts platform.
 
