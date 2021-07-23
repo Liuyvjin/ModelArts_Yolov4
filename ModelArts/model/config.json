@@ -1,0 +1,76 @@
+{
+    // 模型算法为图片分类
+    "model_algorithm": "image_classification",
+    // 模型类型为PyTorch
+    "model_type": "PyTorch",
+    // 模型自定义脚本的运行时环境为python3.6, 同时支持python2.7
+    "runtime": "python3.6",
+    // 模型服务提供一个表单请求的api，请求类型为文件，请求key值为’images’
+    "dependencies": [
+		{
+			"installer": "pip",
+			"packages": [
+				{
+					"restraint": "EXACT",
+					"package_version": "1.4.0",
+					"package_name": "torch"
+				}
+			]
+		}
+	],
+    "apis": [{
+            "procotol": "https",
+            "url": "/",
+            "method": "post",
+            "request": {
+                "Content-type": "multipart/form-data",
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "images": {
+                            "type": "file"
+                        }
+                    }
+                }
+            },
+            "response": {
+                "Content-type": "multipart/from-data",
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "detection_classes": {
+                            "type": "array",
+                            "items": [{
+                                "type": "string"
+                            }]
+                        },
+                        "detection_boxes": {
+                            "type": "array",
+                            "items": [{
+                                "type": "array",
+                                "minItems": 4,
+                                "maxItems": 4,
+                                "items":[{
+                                    "type": "number"
+                                }]
+                            }]
+                        },
+                        "detection_scores": {
+                            "type": "array",
+                            "items": [{
+                                "type": "number"
+                            }]
+                        }
+                    }
+                }
+            }
+        }
+    ]
+    // 模型的精度信息（仅作为模型展示用途）
+    // "metrics": {
+    //     "f1": 0.124555,
+    //     "recall": 0.171875,
+    //     "precision": 0.0023493892851938493,
+    //     "accuracy": 0.00746268656716417
+    // }
+}

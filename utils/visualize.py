@@ -159,13 +159,14 @@ STANDARD_COLORS = [
 ]
 
 
-def visualize_boxes(image, boxes, labels, probs, class_labels):
+def visualize_boxes(image, boxes, labels, probs, class_labels, min_score_thresh=0.5):
 
     category_index = {}
     for id_, label_name in enumerate(class_labels):
         category_index[id_] = {"name": label_name}
     image = visualize_boxes_and_labels_on_image_array(
-        image, boxes, labels, probs, category_index
+        image, boxes, labels, probs, category_index,
+        min_score_thresh=min_score_thresh
     )
     return image
 

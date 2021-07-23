@@ -4,3 +4,4 @@ __pycache__/
 logs/
 weights/
 scripts/
+Yolov4/model/

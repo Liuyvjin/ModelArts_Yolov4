@@ -14,12 +14,11 @@ if __name__ == '__main__':
     # load model
     weight_path = osp.join(WEIGHT_PATH, 'best.pth')
     print("loading weight file from : {}".format(weight_path))
-    chkpt = torch.load(weight_path, map_location=torch.device('cuda'))
     yolo = Build_Model().cuda()
-    yolo.load_state_dict(chkpt)
-    del chkpt
+    yolo.load_state_dict(torch.load(weight_path))
+
     # predict
-    predictor = Evaluator(yolo)
+    predictor = Evaluator(yolo, conf_thresh=0.46)
     start = time()
     with open(test_file, 'r') as f:
         img_list = f.readlines()
@@ -28,6 +27,7 @@ if __name__ == '__main__':
 
     cv2.namedWindow('Predict', flags=cv2.WINDOW_NORMAL)
     for img_name in img_list:
+        # read image
         img = cv2.imread(img_path.format(img_name))
         print('Show: ' + img_path.format(img_name))
         print('Continue? ([y]/n)? ')

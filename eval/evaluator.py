@@ -21,9 +21,12 @@ current_milli_time = lambda: int(round(time.time() * 1000))
 
 
 class Evaluator(object):
-    def __init__(self, model=None):
+    def __init__(self, model=None, conf_thresh=None):
         self.classes        =   cfg.Customer_DATA["CLASSES"]    # default: use customer dataset
-        self.conf_thresh    =   cfg.VAL["CONF_THRESH"]          # 0.005
+        if conf_thresh is None:
+            self.conf_thresh =  cfg.VAL["CONF_THRESH"]          # 0.005
+        else:
+            self.conf_thresh = conf_thresh
         self.nms_thresh     =   cfg.VAL["NMS_THRESH"]           # 0.45
         self.test_size      =   cfg.VAL["TEST_IMG_SIZE"]        # 416
 
@@ -163,7 +166,9 @@ class Evaluator(object):
             bboxes  = pred[:, :4]
             cls_ids = pred[:, 5].round().astype(np.int32)
             scores  = pred[:, 4]
-            visualize_boxes(image=img, boxes=bboxes, labels=cls_ids, probs=scores, class_labels=self.classes)
+            visualize_boxes(
+                image=img, boxes=bboxes, labels=cls_ids, probs=scores,
+                class_labels=self.classes, min_score_thresh=self.conf_thresh)
         if save:
             save_path = osp.join(self.pred_image_path, "{}.jpg".format(img_name))
             cv2.imwrite(save_path, img)

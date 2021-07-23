@@ -36,12 +36,13 @@ class Trainer(object):
                     resume      =   False,
                     gpu_id      =   0,
                     accumulate  =   1,
-                    fp_16       =   False  ):
+                    fp_16       =   False,
+                    start_epoch =   0):
 
         init_seeds(0)
         self.fp_16 = fp_16
         self.device = gpu.select_device(gpu_id)
-        self.start_epoch = 0
+        self.start_epoch = start_epoch
         self.best_mAP = 0.0
         self.accumulate = accumulate
         self.weight_path = osp.join(cfg.WEIGHT_PATH, weight_file)
@@ -102,12 +103,15 @@ class Trainer(object):
         # default path: cfg.WEIGHT_PATH/last.pth
         # last_weight = osp.join(cfg.WEIGHT_PATH, "last.pth")
         chkpt = torch.load(self.weight_path, map_location=self.device)
-        self.yolov4.load_state_dict(chkpt["model"])
+        try:
+            self.yolov4.load_state_dict(chkpt["model"])
+            self.start_epoch = chkpt["epoch"] + 1
+            if chkpt["optimizer"] is not None:
+                self.optimizer.load_state_dict(chkpt["optimizer"])
+                self.best_mAP = chkpt["best_mAP"]
+        except:
+            self.yolov4.load_state_dict(chkpt)
 
-        self.start_epoch = chkpt["epoch"] + 1
-        if chkpt["optimizer"] is not None:
-            self.optimizer.load_state_dict(chkpt["optimizer"])
-            self.best_mAP = chkpt["best_mAP"]
         del chkpt
         self.logger.info_both("Load pretrained model from: %s"%self.weight_path)
 
