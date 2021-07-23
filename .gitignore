@@ -1,7 +1,9 @@
 data/*
+!data/test_images/
 !data/*.py
 __pycache__/
 logs/
 weights/
 scripts/
 Yolov4/model/
+*.pth

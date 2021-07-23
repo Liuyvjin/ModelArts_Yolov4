@@ -18,7 +18,7 @@ class Yolov4Service(PTServingBaseService):
         self.base_dir =  osp.dirname(osp.realpath(__file__))
         # load model
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        weight_path = osp.join(self.base_dir, 'model_backup.pth')
+        weight_path = osp.join(self.base_dir, 'best.pth')
         self.yolo = Build_Model().to(self.device)
         self.yolo.load_state_dict(torch.load(weight_path, map_location=self.device))
         self.yolo.eval()
@@ -30,7 +30,6 @@ class Yolov4Service(PTServingBaseService):
         self.Classes = np.array(Customer_DATA["CLASSES"])
 
     def _preprocess(self, data):
-        # 预处理成{key: input_batch_var}，input_batch_var为模型输入张量
         pro_data = {}
         image_dict = data['images']
         input_batch = []
@@ -56,7 +55,6 @@ class Yolov4Service(PTServingBaseService):
         return result
 
     def _postprocess(self, data):
-        # 根据标签索引到图片的分类结果
         result = {}
         for k, v in data.items():
             cls_idx = v[:, 5].astype(np.int32)

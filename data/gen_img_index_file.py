@@ -11,8 +11,9 @@ import config.yolov4_config as cfg
 import shutil
 from tqdm import tqdm
 
+SPLIT_PERCENT = 0.75
+
 if __name__ == "__main__":
-    split_percent = 0.75
     Data_path   = cfg.DATASET_PATH
     Img_path    = osp.join(Data_path, 'JPEGImages')
     train_index_file = osp.join(Data_path, 'train.txt')
@@ -28,15 +29,15 @@ if __name__ == "__main__":
             # )
 
     index = np.random.permutation(len(file_list))
-    split_index = int(len(index) * split_percent)
+    split_index = int(len(index) * SPLIT_PERCENT)
 
     train_list  = np.array(file_list)[ index[:split_index] ]
     test_list   = np.array(file_list)[ index[split_index:] ]
 
-    with open(train_index_file, "a") as f:
+    with open(train_index_file, "w") as f:
         for image_id in tqdm(train_list):
             f.write(image_id + "\n")
 
-    with open(test_index_file, "a") as f:
+    with open(test_index_file, "w") as f:
         for image_id in tqdm(test_list):
             f.write(image_id + "\n")

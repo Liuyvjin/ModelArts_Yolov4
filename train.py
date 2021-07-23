@@ -8,9 +8,10 @@ import os.path as osp
 if __name__ == "__main__":
     global logger, writer
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weight_file",    type=str,   default="best.pth",
+    parser.add_argument("--weight_file",    type=str,   default="mobilenetv3.pth",
                                             help="weight file path, relative to WEIGHT_PATH")
-    parser.add_argument("--resume",         type=bool,  default=True,      help="resume training flag")
+    parser.add_argument("--resume",         type=bool,  default=False,      action='store_true',
+                                            help="resume training flag")
     parser.add_argument("--gpu_id",         type=int,   default=0,          help="whether use GPU(0) or CPU(-1)" )
     parser.add_argument("--log_path",       type=str,   default="logs/",    help="log path, relative to PROJ_DIR")
     parser.add_argument("--accumulate",     type=int,   default=2,          help="batches to accumulate before optimizing")
@@ -28,5 +29,4 @@ if __name__ == "__main__":
             resume      =   args.resume,
             gpu_id      =   args.gpu_id,
             accumulate  =   args.accumulate,
-            fp_16       =   args.fp_16,
-            start_epoch =   151).train()
+            fp_16       =   args.fp_16).train()

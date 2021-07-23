@@ -113,6 +113,6 @@ class YOLO_Kmeans:
 
 if __name__ == "__main__":
     cluster_number = 9
-    filename = osp.join(DATA_PATH, "all_annotation.txt")
+    filename = osp.join(DATA_PATH, "train_annotation.txt")
     kmeans = YOLO_Kmeans(cluster_number, filename)
     kmeans.txt2clusters()
