@@ -28,13 +28,12 @@ ModelArts_Yolov4
 ```
 
 Then:
-* Update the `"DATASET_NAME"` and `"Customer_DATA"`in the `config/yolov4_config.py`.
-Convert data format :use data/voc.py to *.txt
+* Update the `"DATASET_NAME"` and `"Customer_DATA"` in the `config/yolov4_config.py`.
 
-* Split the data into trainset and testset with `data/gen_img_index_file.py`. After that you will get two files: `train.txt` and `test.txt` in your dataset folder.
+* Split the data into trainset and testset with `data/gen_img_index_file.py`. After this you will get two files: `train.txt` and `test.txt` in your dataset folder.
 
 * Convert the pascal voc *.xml format annotation to *.txt format (Image_path &nbsp; xmin0,ymin0,xmax0,ymax0,class0 &nbsp;) using `data/convert_voc_to_txt.py`. You will get `data/train_annotation.txt`
-and `data/test_annotation.txt`
+and `data/test_annotation.txt`.
 
 * Generate annotation files for each class with `data/gen_cls_anno.py`. These files are generated in the `data/your_dataset/ClassAnnos/` directory and are used to calculate APs.
 
@@ -62,8 +61,8 @@ python -u train.py --weight_file  your_backup.pth  --resume
 
 Run `predict.py` and you can predict images from testset one by one.
 
-![test1](https://github.com/Liuyvjin/ModelArts_Yolov4/data/test_images/test1.jpg)
-![test2](https://github.com/Liuyvjin/ModelArts_Yolov4/data/test_images/test2.jpg)
+![test1](https://github.com/Liuyvjin/ModelArts_Yolov4/blob/master/data/test_images/test1.jpg)
+![test2](https://github.com/Liuyvjin/ModelArts_Yolov4/blob/master/data/test_images/test2.jpg)
 
 # 4. Deployment
 
